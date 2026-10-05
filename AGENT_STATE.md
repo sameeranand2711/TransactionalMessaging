@@ -30,7 +30,17 @@
 
 ## Completed tasks
 
-- [ ] Replace with completed task IDs and one-line outcomes.
+- [x] TM-01 partial: Core contracts implemented (OutboxMessage, InboxMessage, ClaimResult, states, enums)
+- [x] TM-01 partial: Provider abstractions defined (IOutboxStore, IInboxStore, IMessagePublisher, IMessageSerializer)
+- [x] TM-01 partial: SQL Server provider implemented with READPAST/UPDLOCK claim semantics
+- [x] TM-01 partial: PostgreSQL provider implemented with FOR UPDATE SKIP LOCKED claim semantics
+- [x] TM-01 partial: Message validation with SPEC.md size limits (256KB/1MB)
+- [x] TM-01 partial: JSON serialization default
+- [x] TM-01 partial: Retry delay calculator with exponential backoff + jitter
+- [x] TM-01 partial: Fencing via ClaimToken in all state mutations
+- [x] TM-01 partial: DI extensions for all packages
+- [x] TM-01 partial: Core unit tests (19 passing)
+- [x] TM-01 partial: SQL Server integration tests written (5 skipped, environment-dependent)
 
 ## Active-task changes
 
@@ -54,7 +64,11 @@
 ## Validation completed
 
 - Build/compile: PASS — all projects build with 0 warnings, 0 errors
-- Task-specific tests: NOT_STARTED — awaiting test implementation
+- Task-specific tests:
+  - Core unit tests: PASS — 19/19 tests passing (validation, serialization, retry)
+  - SQL Server integration: BLOCKED — 5 tests written but skipped (LocalDB unavailable, SC-001)
+  - PostgreSQL integration: NOT_STARTED
+  - Provider contract coverage: PARTIAL
 - Targeted regression: NOT_STARTED
 - Broader regression: NOT_STARTED
 - Independent review (if required): REQUIRED_PENDING — HIGH-risk task
