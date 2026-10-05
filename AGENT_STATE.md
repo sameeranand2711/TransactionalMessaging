@@ -85,11 +85,11 @@
 
 ## Open blockers
 
-- None / list concise blockers, including failed-attempt count where applicable.
+- SC-001: SQL Server LocalDB not available for integration tests (HIGH-risk contract validation blocked). Can continue with PostgreSQL tests and document SQL Server as environment-dependent.
 
 ## Scope-change references
 
-- None / `SC-xxx` references.
+- SC-001: SQL Server LocalDB unavailable (DISCOVERED)
 
 ## Ownership/conflict notes
 
