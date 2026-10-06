@@ -1,142 +1,360 @@
-# TASKS.md
+# TransactionalMessaging V2 Development Tasks
 
-Tasks are sequential. `NOT_STARTED → IN_PROGRESS → COMPLETE`; `BLOCKED` is a checkpoint, not approval to bypass a gate. High-risk tasks require targeted independent review to be counted complete; reviewers may review a related high-risk diff as one bounded pass. No next dependent task starts without its gates.
+## Task Status Legend
+- **NOT_STARTED**: Task not yet begun
+- **IN_PROGRESS**: Task actively being worked on
+- **BLOCKED**: Task blocked by dependency or external issue
+- **READY_FOR_REVIEW**: Implementation complete, awaiting review
+- **COMPLETE**: Task finished and merged
 
-## Shared task boundaries
-- **Default external side effects:** `NONE` for every task.
-- **Production authority:** `NONE` for every task.
-- **PROTECTED:** inherit `AGENT_GUARDRAILS.md`, including live data, secrets, infra, unrelated libraries, and other active tasks.
-- A branch-local commit after completed tasks is authorized; remote push/PR/publish/merge are not.
-- File paths refer to conventional structure; inspect real repository locations first and adapt only within the same logical scope. Record deviations in `AGENT_STATE.md`.
+## Authority Legend
+- **READ**: Files/areas that may be read for context
+- **WRITE**: Files/areas that may be modified
+- **PROTECTED**: Files that must not be modified without explicit approval
 
-## TM-01 — Core contracts and provider-backed transaction safety
+---
 
-- **Status:** `NOT_STARTED`
-- **Owner:** `agent-01-core-storage`
-- **Dependencies:** None
-- **Risk:** `HIGH`
-- **External side effects:** `NONE`
-- **Production authority:** `NONE`
+## Phase 1: Observability & Diagnostics (v1.1.0)
 
-**READ:** `SPEC.md`; existing solution/core/store project files; directly relevant tests, provider schemas
+### TM-V2-01: Structured Logging & Correlation
+**Status:** NOT_STARTED  
+**Priority:** HIGH  
+**Risk:** MEDIUM  
+**Assigned:** Unassigned  
+**Estimated Effort:** 3-4 days
 
-**WRITE:** `src/TransactionalMessaging.Core/**`, `src/TransactionalMessaging.SqlServer/**`, `src/TransactionalMessaging.PostgreSql/**`, `tests/**` limited to storage/contract coverage
+**Objective:**
+Add comprehensive structured logging with correlation ID propagation throughout the message lifecycle (business transaction → outbox → publish → inbox).
 
-**PROTECTED:** `AGENT_GUARDRAILS.md` default areas, all unrelated components and external systems.
+**Scope:**
+- Add correlation ID support to `OutboxMessage` and `InboxMessage`
+- Implement structured logging in all core operations using `ILogger<T>`
+- Create log scopes with message context (MessageId, MessageType, WorkerId, ClaimToken)
+- Define diagnostic events: MessageWritten, MessageClaimed, MessagePublished, MessageFailed, MessageCompleted
+- Add performance logging: operation duration, payload size
+- Ensure no sensitive data (payload contents) logged by default
 
-**In scope:** Implement or finish stable message envelope, serializer limits, atomic local business + outbox write contract, provider-specific claim/fencing/inbox store semantics, and real SQL provider contract tests. Inspect existing implementation first and reuse it. Do not edit unrelated components.
+**Authority:**
+- **READ**: All `src/TransactionalMessaging.Core/**`, `src/TransactionalMessaging.SqlServer/**`, `src/TransactionalMessaging.PostgreSql/**`, `src/TransactionalMessaging.Hosting/**`
+- **WRITE**: 
+  - `src/TransactionalMessaging.Core/Models/OutboxMessage.cs` (add CorrelationId property)
+  - `src/TransactionalMessaging.Core/Models/InboxMessage.cs` (add CorrelationId property)
+  - `src/TransactionalMessaging.Core/Logging/` (new directory for logging extensions)
+  - `src/TransactionalMessaging.SqlServer/SqlServerOutboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.SqlServer/SqlServerInboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.PostgreSql/PostgreSqlOutboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.PostgreSql/PostgreSqlInboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (add logging)
+  - `src/TransactionalMessaging.Hosting/Services/CleanupService.cs` (add logging)
+  - `schemas/sqlserver-outbox-schema.sql` (add CorrelationId column)
+  - `schemas/sqlserver-inbox-schema.sql` (add CorrelationId column)
+  - `schemas/postgresql-outbox-schema.sql` (add CorrelationId column)
+  - `schemas/postgresql-inbox-schema.sql` (add CorrelationId column)
+- **PROTECTED**: All other files, especially contracts (`IOutboxStore`, `IInboxStore`, `IMessagePublisher`)
 
-**Out of scope:** unrelated refactoring, new domain features, production/shared infra, external writes and speculative new abstractions.
+**Definition of Done:**
+- [ ] CorrelationId property added to OutboxMessage and InboxMessage
+- [ ] Database schemas updated with CorrelationId column (nullable for backward compatibility)
+- [ ] Structured logging added to all store operations (Write, Claim, MarkPublished, etc.)
+- [ ] Structured logging added to dispatcher and cleanup services
+- [ ] Log scopes include message context (MessageId, MessageType, WorkerId)
+- [ ] Performance metrics logged (operation duration)
+- [ ] Unit tests verify logging behavior
+- [ ] Sample application demonstrates correlation ID flow
+- [ ] No payload contents logged (privacy/security)
 
-**Outputs:** Core/provider code and tests with verified .NET 8/10 builds.
+**Blocked By:** None
 
-**Acceptance criteria:** Rolled-back DB transaction has no publishable event; committed transaction retains outbox intent; one valid claim token; stale claims cannot complete; SQL Server and PostgreSQL provider tests cover concurrency; source only advertises at-least-once.
+**Dependencies:** None
 
-**Validation:** Build and contract-test both targets; local disposable SQL Server/PostgreSQL integration where available. If database unavailable, mark required tests BLOCKED rather than fake PASS.
+---
 
-**Definition of done:**
-- [ ] Implemented required observable behavior and outputs; acceptance satisfied.
-- [ ] READ/WRITE/PROTECTED and command boundaries respected.
-- [ ] No external/production side effects or unapproved dependencies.
-- [ ] Tests/validations pass without weakening tests or disabling checks.
-- [ ] Correct risk-based independent review completed when required; no unaddressed blocker.
-- [ ] `AGENT_STATE.md` updated; scope changes recorded; local task checkpoint/commit when authorized.
+### TM-V2-02: Metrics & Health Checks
+**Status:** NOT_STARTED  
+**Priority:** HIGH  
+**Risk:** MEDIUM  
+**Assigned:** Unassigned  
+**Estimated Effort:** 4-5 days
 
-## TM-02 — Bounded dispatch, inbox, ordering and recovery
+**Objective:**
+Add production-ready health checks and metrics using ASP.NET Core health checks and System.Diagnostics.Metrics.
 
-- **Status:** `NOT_STARTED`
-- **Owner:** `agent-01-core-storage`
-- **Dependencies:** TM-01
-- **Risk:** `HIGH`
-- **External side effects:** `NONE`
-- **Production authority:** `NONE`
+**Scope:**
+- Create new package: `TransactionalMessaging.HealthChecks`
+- Implement `OutboxStoreHealthCheck` (database connectivity, table schema validation)
+- Implement `InboxStoreHealthCheck` (database connectivity, table schema validation)
+- Implement `DispatcherHealthCheck` (dispatcher running, processing messages)
+- Add metrics using `System.Diagnostics.Metrics.Meter`
+- Metrics: outbox queue depth, inbox reservation count, publish success/failure rates
+- Metrics: message age (time in Pending state), claim contention
+- Optional OpenTelemetry integration
+- Sample ASP.NET Core app with `/health` and `/metrics` endpoints
 
-**READ:** Relevant store contract/implementation and tests; `SPEC.md` dispatch/inbox sections
+**Authority:**
+- **READ**: All `src/TransactionalMessaging.Core/**`, `src/TransactionalMessaging.Hosting/**`
+- **WRITE**:
+  - `src/TransactionalMessaging.HealthChecks/` (new project)
+  - `src/TransactionalMessaging.HealthChecks/OutboxStoreHealthCheck.cs` (new)
+  - `src/TransactionalMessaging.HealthChecks/InboxStoreHealthCheck.cs` (new)
+  - `src/TransactionalMessaging.HealthChecks/DispatcherHealthCheck.cs` (new)
+  - `src/TransactionalMessaging.HealthChecks/ServiceCollectionExtensions.cs` (new)
+  - `src/TransactionalMessaging.Core/Metrics/` (new directory)
+  - `src/TransactionalMessaging.Core/Metrics/TransactionalMessagingMeter.cs` (new)
+  - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (add metrics)
+  - `samples/TransactionalMessaging.HealthChecksSample/` (new sample project)
+- **PROTECTED**: Core contracts, existing store implementations
 
-**WRITE:** `src/TransactionalMessaging.Core/**`, `src/TransactionalMessaging.Hosting/**`, provider files needed for claims/retries, relevant `tests/**`
+**Definition of Done:**
+- [ ] `TransactionalMessaging.HealthChecks` package created
+- [ ] Health checks implemented for outbox/inbox stores
+- [ ] Health checks validate database connectivity and schema
+- [ ] Dispatcher health check reports running/stopped state
+- [ ] Metrics exposed via `System.Diagnostics.Metrics.Meter`
+- [ ] Metrics: queue depth, reservation count, publish success/failure
+- [ ] Metrics: message age, claim duration
+- [ ] Sample app demonstrates `/health` endpoint with JSON response
+- [ ] Sample app demonstrates metrics collection
+- [ ] Unit tests for health check logic
+- [ ] Integration tests verify health checks with real database
+- [ ] Documentation: metrics catalog and health check configuration
 
-**PROTECTED:** `AGENT_GUARDRAILS.md` default areas, all unrelated components and external systems.
+**Blocked By:** None (but benefits from TM-V2-01 logging)
 
-**In scope:** Finish hosted dispatcher, cancellation, bounded batches, lease renewal, fencing, retries/backoff, dead letters, retention/cleanup, inbox transactional completion, and optional per-key order. No holding DB locks during network publish.
+**Dependencies:**
+- TM-V2-01 (optional, for better diagnostics)
 
-**Out of scope:** unrelated refactoring, new domain features, production/shared infra, external writes and speculative new abstractions.
+---
 
-**Outputs:** Runnable host/inbox logic and tests for retries, duplicate ACK/crash, stale lease and ordering.
+### TM-V2-03: Diagnostic Commands & Tooling
+**Status:** NOT_STARTED  
+**Priority:** MEDIUM  
+**Risk:** LOW  
+**Assigned:** Unassigned  
+**Estimated Effort:** 5-6 days
 
-**Acceptance criteria:** Crash after broker ACK may cause duplicate not silent loss; no unbounded memory/retry; strict ordering never skips blocked head automatically; inbox + business transaction atomicity is tested; cleanup cannot delete Pending or claimed work.
+**Objective:**
+Create CLI tool for diagnosing production issues and managing messages.
 
-**Validation:** Targeted fault injection + concurrency/inbox tests; no invented exactly-once claims; independent review required before declaring these HIGH tasks complete.
+**Scope:**
+- Create new global tool: `TransactionalMessaging.Cli`
+- Commands: `status`, `inspect`, `retry`, `dead-letter`, `cleanup --dry-run`
+- Support both SQL Server and PostgreSQL connection strings
+- Output formats: JSON and human-readable table
+- Connection string from config file or command line argument
+- Safe operations: read-only by default, write operations require confirmation
 
-**Definition of done:**
-- [ ] Implemented required observable behavior and outputs; acceptance satisfied.
-- [ ] READ/WRITE/PROTECTED and command boundaries respected.
-- [ ] No external/production side effects or unapproved dependencies.
-- [ ] Tests/validations pass without weakening tests or disabling checks.
-- [ ] Correct risk-based independent review completed when required; no unaddressed blocker.
-- [ ] `AGENT_STATE.md` updated; scope changes recorded; local task checkpoint/commit when authorized.
+**Authority:**
+- **READ**: All `src/**`
+- **WRITE**:
+  - `tools/TransactionalMessaging.Cli/` (new project)
+  - `tools/TransactionalMessaging.Cli/Program.cs` (new)
+  - `tools/TransactionalMessaging.Cli/Commands/` (new directory)
+  - `tools/TransactionalMessaging.Cli/Commands/StatusCommand.cs` (new)
+  - `tools/TransactionalMessaging.Cli/Commands/InspectCommand.cs` (new)
+  - `tools/TransactionalMessaging.Cli/Commands/RetryCommand.cs` (new)
+  - `tools/TransactionalMessaging.Cli/Commands/DeadLetterCommand.cs` (new)
+  - `tools/TransactionalMessaging.Cli/Commands/CleanupCommand.cs` (new)
+  - `tools/TransactionalMessaging.Cli/Formatters/` (JSON and table formatters)
+  - `docs/CLI_GUIDE.md` (new documentation)
+- **PROTECTED**: Core library code, existing samples
 
-## TM-03 — Minimal dependency injection and console integration demo
+**Definition of Done:**
+- [ ] CLI tool project created and packaged as global tool
+- [ ] `status` command shows queue depths, oldest message, worker status
+- [ ] `inspect` command shows message details, retry count, history
+- [ ] `retry` command reschedules failed message to Pending
+- [ ] `dead-letter` command moves message to DeadLetter state
+- [ ] `cleanup --dry-run` previews cleanup operation
+- [ ] Commands work with SQL Server and PostgreSQL
+- [ ] Output formats: JSON and human-readable table
+- [ ] Connection string from config or `--connection-string` argument
+- [ ] Write operations require `--confirm` flag
+- [ ] Unit tests for command logic
+- [ ] Integration tests against real database
+- [ ] CLI guide documentation with examples
 
-- **Status:** `NOT_STARTED`
-- **Owner:** `agent-02-integration-docs`
-- **Dependencies:** TM-01, TM-02
-- **Risk:** `MEDIUM`
-- **External side effects:** `NONE`
-- **Production authority:** `NONE`
+**Blocked By:** None
 
-**READ:** Actual public APIs, hosting/store setup, targeted tests and sample conventions
+**Dependencies:**
+- TM-V2-01 (optional, for correlation ID inspection)
+- TM-V2-02 (optional, for metrics in status command)
 
-**WRITE:** Only DI/registration/extensions in existing appropriate src projects, `samples/TransactionalMessaging.Sample/**`, and matching registration/sample tests
+---
 
-**PROTECTED:** `AGENT_GUARDRAILS.md` default areas, all unrelated components and external systems.
+## Phase 2: Resilience & Recovery (v1.2.0)
 
-**In scope:** Add or verify conventional AddTransactionalMessaging registration, provider and optional hosted dispatcher wiring with safe lifetimes. Create one console Generic Host demo of local DB transaction -> outbox -> simple local publisher -> inbox dedup; no Kafka deployment. Optional Kafka adapter only when API exists locally; never make it a mandatory dependency.
+### TM-V2-04: Circuit Breaker & Backpressure
+**Status:** NOT_STARTED  
+**Priority:** HIGH  
+**Risk:** HIGH  
+**Assigned:** Unassigned  
+**Estimated Effort:** 4-5 days
 
-**Out of scope:** unrelated refactoring, new domain features, production/shared infra, external writes and speculative new abstractions.
+**Objective:**
+Implement circuit breaker pattern around message publisher to prevent cascading failures when broker unavailable.
 
-**Outputs:** Small compilable console demo, DI tests, exact documented run prerequisites.
+**Scope:**
+- Circuit breaker decorator wrapping `IMessagePublisher`
+- Circuit states: Closed (normal), Open (broker down), Half-Open (testing recovery)
+- Configuration: failure threshold, open duration, half-open test interval
+- Backpressure: dispatcher pauses claiming when circuit open
+- Metrics: circuit state changes, open duration
+- Graceful degradation: log warnings, don't crash
 
-**Acceptance criteria:** No invented API; services resolve; duplicate service registration does not multiply hosted consumers unintentionally; console demonstrates published message and suppressed duplicate with disposable local DB; command works under documented prerequisites.
+**Authority:**
+- **READ**: `src/TransactionalMessaging.Core/**`, `src/TransactionalMessaging.Hosting/**`
+- **WRITE**:
+  - `src/TransactionalMessaging.Core/Publishers/CircuitBreakerPublisherDecorator.cs` (new)
+  - `src/TransactionalMessaging.Core/Publishers/CircuitBreakerOptions.cs` (new)
+  - `src/TransactionalMessaging.Core/Publishers/CircuitState.cs` (new enum)
+  - `src/TransactionalMessaging.Core/ServiceCollectionExtensions.cs` (add `.WithCircuitBreaker()`)
+  - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (pause on circuit open)
+  - `tests/TransactionalMessaging.Core.Tests/Publishers/CircuitBreakerTests.cs` (new)
+- **PROTECTED**: `IMessagePublisher` interface (cannot change signature)
 
-**Validation:** Compile sample on .NET 8/10 as supported; run with an explicitly local disposable DB when available; check stdout/DB evidence. Unavailable infrastructure cannot be labeled PASS.
+**Definition of Done:**
+- [ ] Circuit breaker decorator implemented
+- [ ] Circuit opens after configured failure threshold
+- [ ] Circuit closes after success in half-open state
+- [ ] Dispatcher pauses claiming when circuit open
+- [ ] Dispatcher resumes when circuit closes
+- [ ] No message loss during circuit transitions
+- [ ] Metrics track circuit state changes
+- [ ] Unit tests for circuit state transitions
+- [ ] Integration tests with simulated broker failures
+- [ ] Documentation: circuit breaker configuration guide
 
-**Definition of done:**
-- [ ] Implemented required observable behavior and outputs; acceptance satisfied.
-- [ ] READ/WRITE/PROTECTED and command boundaries respected.
-- [ ] No external/production side effects or unapproved dependencies.
-- [ ] Tests/validations pass without weakening tests or disabling checks.
-- [ ] Correct risk-based independent review completed when required; no unaddressed blocker.
-- [ ] `AGENT_STATE.md` updated; scope changes recorded; local task checkpoint/commit when authorized.
+**Blocked By:** Phase 1 (v1.1.0) complete
 
-## TM-04 — Final consumer README, release checks and targeted independent audit
+**Dependencies:**
+- TM-V2-02 (metrics for circuit state tracking)
 
-- **Status:** `NOT_STARTED`
-- **Owner:** `agent-02-integration-docs + agent-03-independent-review`
-- **Dependencies:** TM-03
-- **Risk:** `HIGH`
-- **External side effects:** `NONE`
-- **Production authority:** `NONE`
+---
 
-**READ:** Verified src/tests/samples, package metadata, current README, task status
+### TM-V2-05: Enhanced Poison Message Handling
+**Status:** NOT_STARTED  
+**Priority:** MEDIUM  
+**Risk:** MEDIUM  
+**Assigned:** Unassigned  
+**Estimated Effort:** 3-4 days
 
-**WRITE:** Repository `README.md`, relevant release metadata/docs, bounded test fixes only via original owner after recorded review findings
+**Objective:**
+Intelligent handling of messages that consistently fail, with dead letter quarantine and replay capability.
 
-**PROTECTED:** `AGENT_GUARDRAILS.md` default areas, all unrelated components and external systems.
+**Scope:**
+- Poison message detection: max retry count exceeded → dead letter
+- Dead letter reason tracking: MaxRetriesExceeded, SerializationFailure, PublisherRejected, Manual
+- Optional `IDeadLetterHandler` for custom logic
+- Dead letter metadata: error message, first failure time, retry history
+- CLI command: `replay-dead-letter` to reset to Pending
+- Critical alert logging when message dead-lettered
 
-**In scope:** Create/update well-structured actual README last; validate snippets by compiled demo; run broader regression and local package check. Independent reviewer examines high-risk source/changes and public guarantees once; permit one bounded remediation and targeted verification; no cyclic review loop.
+**Authority:**
+- **READ**: All `src/**`
+- **WRITE**:
+  - `src/TransactionalMessaging.Core/Handlers/IDeadLetterHandler.cs` (new interface)
+  - `src/TransactionalMessaging.Core/Models/DeadLetterReason.cs` (new enum)
+  - `src/TransactionalMessaging.Core/Models/OutboxMessage.cs` (add DeadLetterReason, DeadLetterMetadata)
+  - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (dead letter detection)
+  - `schemas/sqlserver-outbox-schema.sql` (add DeadLetterReason, DeadLetterMetadata columns)
+  - `schemas/postgresql-outbox-schema.sql` (add DeadLetterReason, DeadLetterMetadata columns)
+  - `tools/TransactionalMessaging.Cli/Commands/ReplayDeadLetterCommand.cs` (new)
+- **PROTECTED**: Core contracts (minimize changes)
 
-**Out of scope:** unrelated refactoring, new domain features, production/shared infra, external writes and speculative new abstractions.
+**Definition of Done:**
+- [ ] Dead letter reason enum defined
+- [ ] Dead letter metadata captured (error, timestamps)
+- [ ] Dispatcher moves message to dead letter after max retries
+- [ ] `IDeadLetterHandler` interface for custom handling
+- [ ] Critical log alert when message dead-lettered
+- [ ] CLI `replay-dead-letter` command resets to Pending
+- [ ] Unit tests for poison message detection
+- [ ] Integration tests verify dead letter flow
+- [ ] Documentation: poison message handling guide
 
-**Outputs:** Validated README and review PASS/FAIL evidence; local package/branch checkpoint ready for human release/merge.
+**Blocked By:** Phase 1 (v1.1.0) complete
 
-**Acceptance criteria:** README accurately documents registration, usage, setup, outbox/inbox, at-least-once duplicates, cleanup and samples; unit/integration and failure checks run; no Critical/High open; independent review passed; no remote publish or merge.
+**Dependencies:**
+- TM-V2-01 (logging for alerts)
+- TM-V2-03 (CLI for replay command)
 
-**Validation:** Final build/test/static/dependency review and independent targeted code-and-doc review; one remediation pass plus targeted verification only.
+---
 
-**Definition of done:**
-- [ ] Implemented required observable behavior and outputs; acceptance satisfied.
-- [ ] READ/WRITE/PROTECTED and command boundaries respected.
-- [ ] No external/production side effects or unapproved dependencies.
-- [ ] Tests/validations pass without weakening tests or disabling checks.
-- [ ] Correct risk-based independent review completed when required; no unaddressed blocker.
-- [ ] `AGENT_STATE.md` updated; scope changes recorded; local task checkpoint/commit when authorized.
+### TM-V2-06: Disaster Recovery & Data Retention
+**Status:** NOT_STARTED  
+**Priority:** MEDIUM  
+**Risk:** HIGH  
+**Assigned:** Unassigned  
+**Estimated Effort:** 5-6 days
+
+**Objective:**
+Provide tools and procedures for disaster recovery, archival, and data retention.
+
+**Scope:**
+- Disaster recovery playbook documentation
+- Archive tables for Published/Completed messages
+- Archival service: move old messages to archive (opt-in)
+- Purge utility: delete archived messages beyond retention
+- Validation queries: detect gaps, orphaned claims
+- Backup/restore guidance
+
+**Authority:**
+- **READ**: All `src/**`, `schemas/**`
+- **WRITE**:
+  - `schemas/sqlserver-archive-schema.sql` (new)
+  - `schemas/postgresql-archive-schema.sql` (new)
+  - `src/TransactionalMessaging.Core/Services/OutboxArchivalService.cs` (new)
+  - `src/TransactionalMessaging.Core/Services/InboxArchivalService.cs` (new)
+  - `src/TransactionalMessaging.Core/Options/ArchivalOptions.cs` (new)
+  - `docs/DISASTER_RECOVERY.md` (new)
+  - `docs/DATA_RETENTION.md` (new)
+  - `tools/TransactionalMessaging.Cli/Commands/ArchiveCommand.cs` (new)
+  - `tools/TransactionalMessaging.Cli/Commands/PurgeCommand.cs` (new)
+- **PROTECTED**: Main outbox/inbox tables (archival only, no destructive changes)
+
+**Definition of Done:**
+- [ ] Archive table schemas created for SQL Server and PostgreSQL
+- [ ] Archival service moves Published messages to archive
+- [ ] Archival respects retention period (default 90 days)
+- [ ] Purge utility deletes archived messages beyond retention
+- [ ] Validation queries detect gaps in message sequence
+- [ ] Disaster recovery playbook documented
+- [ ] CLI commands: `archive`, `purge` with `--dry-run`
+- [ ] Unit tests for archival logic
+- [ ] Integration tests verify archival and purge
+- [ ] Backup/restore tested against real scenario
+
+**Blocked By:** Phase 1 (v1.1.0) complete
+
+**Dependencies:**
+- TM-V2-03 (CLI for archive/purge commands)
+
+---
+
+## Phase 3: Performance & Scalability (v1.3.0)
+
+_(Tasks TM-V2-07 through TM-V2-09 to be detailed when Phase 2 nears completion)_
+
+## Phase 4: Ecosystem Integration (v1.4.0)
+
+_(Tasks TM-V2-10 through TM-V2-12 to be detailed when Phase 2 nears completion)_
+
+## Phase 5: Developer Experience (v1.5.0)
+
+_(Tasks TM-V2-13 through TM-V2-15 to be detailed when Phase 3 nears completion)_
+
+---
+
+## Notes
+
+- All tasks follow the same Definition of Done standards from V1
+- Each task must include unit tests and integration tests
+- Each task must update relevant documentation
+- Schema changes must be backward compatible where possible
+- Breaking changes require major version bump and migration guide
+- All code must follow `DEVELOPMENT_STANDARDS.md`
+- All work must respect `AGENT_GUARDRAILS.md` and `AGENT_RULES.md`
+
+---
+
+*Last Updated: 2026-10-06*
