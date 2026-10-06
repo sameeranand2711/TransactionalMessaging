@@ -6,7 +6,7 @@ namespace TransactionalMessaging.Core.Internal;
 /// Calculates retry delays using exponential backoff with optional jitter.
 /// Follows SPEC.md section 15 recommendations.
 /// </summary>
-internal static class RetryDelayCalculator
+public static class RetryDelayCalculator
 {
     private static readonly Random Random = new();
 
