@@ -1,4 +1,4 @@
-# TransactionalMessaging V2 Development Tasks
+# TransactionalMessaging Development Tasks
 
 ## Task Status Legend
 - **NOT_STARTED**: Task not yet begun
@@ -11,6 +11,82 @@
 - **READ**: Files/areas that may be read for context
 - **WRITE**: Files/areas that may be modified
 - **PROTECTED**: Files that must not be modified without explicit approval
+
+---
+
+## Stage 0: V1 Core Implementation (v1.0.0)
+
+### TM-01: Core Contracts & Provider Stores
+**Status:** READY_FOR_REVIEW  
+**Priority:** HIGH  
+**Risk:** HIGH  
+**Assigned:** Unassigned  
+**Estimated Effort:** 5-7 days
+
+**Objective:**
+Implement core transactional outbox/inbox contracts and SQL Server/PostgreSQL provider stores with atomic claim semantics.
+
+**Authority:**
+- **READ**: All `src/TransactionalMessaging.Core/**`, `src/TransactionalMessaging.SqlServer/**`, `src/TransactionalMessaging.PostgreSql/**`, `tests/**`
+- **WRITE**: 
+  - `src/TransactionalMessaging.Core/**`
+  - `src/TransactionalMessaging.SqlServer/**`
+  - `src/TransactionalMessaging.PostgreSql/**`
+  - `tests/TransactionalMessaging.Core.Tests/**`
+  - `tests/TransactionalMessaging.SqlServer.IntegrationTests/**`
+  - `tests/TransactionalMessaging.PostgreSql.IntegrationTests/**`
+- **PROTECTED**: All other files
+
+**Definition of Done:**
+- [x] Core contracts implemented (OutboxMessage, InboxMessage, ClaimResult, PublicationResult)
+- [x] Provider abstractions defined (IOutboxStore, IInboxStore, IMessagePublisher, IMessageSerializer)
+- [x] SQL Server provider implemented with READPAST/UPDLOCK claim semantics
+- [x] PostgreSQL provider implemented with FOR UPDATE SKIP LOCKED claim semantics
+- [x] Unit tests for core validation, serialization, retry logic (19 tests passing)
+- [x] Integration tests for both providers (environment-dependent)
+- [ ] Independent review completed
+
+---
+
+### TM-02: Bounded Dispatch, Inbox & Ordering
+**Status:** NOT_STARTED  
+**Priority:** HIGH  
+**Risk:** HIGH  
+**Assigned:** Unassigned  
+**Estimated Effort:** 5-6 days
+
+**Objective:**
+Implement bounded dispatcher service with lease-based concurrency control and inbox reservation for deduplication.
+
+**Dependencies:** TM-01 complete
+
+---
+
+### TM-03: Cleanup Service & Data Hygiene
+**Status:** NOT_STARTED  
+**Priority:** MEDIUM  
+**Risk:** MEDIUM  
+**Assigned:** Unassigned  
+**Estimated Effort:** 3-4 days
+
+**Objective:**
+Implement cleanup service for removing old Published/Completed messages and releasing expired claims.
+
+**Dependencies:** TM-01 complete
+
+---
+
+### TM-04: Sample Application & Documentation
+**Status:** NOT_STARTED  
+**Priority:** HIGH  
+**Risk:** LOW  
+**Assigned:** Unassigned  
+**Estimated Effort:** 3-4 days
+
+**Objective:**
+Create comprehensive sample application demonstrating order processing scenario with full documentation.
+
+**Dependencies:** TM-01, TM-02, TM-03 complete
 
 ---
 
@@ -40,16 +116,18 @@ Add comprehensive structured logging with correlation ID propagation throughout 
   - `src/TransactionalMessaging.Core/Models/OutboxMessage.cs` (add CorrelationId property)
   - `src/TransactionalMessaging.Core/Models/InboxMessage.cs` (add CorrelationId property)
   - `src/TransactionalMessaging.Core/Logging/` (new directory for logging extensions)
-  - `src/TransactionalMessaging.SqlServer/SqlServerOutboxStore.cs` (add logging)
-  - `src/TransactionalMessaging.SqlServer/SqlServerInboxStore.cs` (add logging)
-  - `src/TransactionalMessaging.PostgreSql/PostgreSqlOutboxStore.cs` (add logging)
-  - `src/TransactionalMessaging.PostgreSql/PostgreSqlInboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.SqlServer/Outbox/SqlServerOutboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.SqlServer/Inbox/SqlServerInboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.PostgreSql/Outbox/PostgreSqlOutboxStore.cs` (add logging)
+  - `src/TransactionalMessaging.PostgreSql/Inbox/PostgreSqlInboxStore.cs` (add logging)
   - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (add logging)
   - `src/TransactionalMessaging.Hosting/Services/CleanupService.cs` (add logging)
-  - `schemas/sqlserver-outbox-schema.sql` (add CorrelationId column)
-  - `schemas/sqlserver-inbox-schema.sql` (add CorrelationId column)
-  - `schemas/postgresql-outbox-schema.sql` (add CorrelationId column)
-  - `schemas/postgresql-inbox-schema.sql` (add CorrelationId column)
+  - `src/TransactionalMessaging.SqlServer/Schema/Outbox.sql` (add CorrelationId column)
+  - `src/TransactionalMessaging.SqlServer/Schema/Inbox.sql` (add CorrelationId column)
+  - `src/TransactionalMessaging.PostgreSql/Schema/Outbox.sql` (add CorrelationId column)
+  - `src/TransactionalMessaging.PostgreSql/Schema/Inbox.sql` (add CorrelationId column)
+  - `tests/TransactionalMessaging.Core.Tests/Logging/` (new directory for logging tests)
+  - `samples/TransactionalMessaging.CorrelationSample/` (new sample demonstrating correlation flow)
 - **PROTECTED**: All other files, especially contracts (`IOutboxStore`, `IInboxStore`, `IMessagePublisher`)
 
 **Definition of Done:**
@@ -102,6 +180,7 @@ Add production-ready health checks and metrics using ASP.NET Core health checks 
   - `src/TransactionalMessaging.Core/Metrics/TransactionalMessagingMeter.cs` (new)
   - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (add metrics)
   - `samples/TransactionalMessaging.HealthChecksSample/` (new sample project)
+  - `tests/TransactionalMessaging.HealthChecks.Tests/` (new test project)
 - **PROTECTED**: Core contracts, existing store implementations
 
 **Definition of Done:**
@@ -156,6 +235,7 @@ Create CLI tool for diagnosing production issues and managing messages.
   - `tools/TransactionalMessaging.Cli/Commands/CleanupCommand.cs` (new)
   - `tools/TransactionalMessaging.Cli/Formatters/` (JSON and table formatters)
   - `docs/CLI_GUIDE.md` (new documentation)
+  - `tests/TransactionalMessaging.Cli.Tests/` (new test project)
 - **PROTECTED**: Core library code, existing samples
 
 **Definition of Done:**
@@ -210,6 +290,7 @@ Implement circuit breaker pattern around message publisher to prevent cascading 
   - `src/TransactionalMessaging.Core/ServiceCollectionExtensions.cs` (add `.WithCircuitBreaker()`)
   - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (pause on circuit open)
   - `tests/TransactionalMessaging.Core.Tests/Publishers/CircuitBreakerTests.cs` (new)
+  - `tests/TransactionalMessaging.IntegrationTests/CircuitBreakerIntegrationTests.cs` (new)
 - **PROTECTED**: `IMessagePublisher` interface (cannot change signature)
 
 **Definition of Done:**
@@ -256,9 +337,11 @@ Intelligent handling of messages that consistently fail, with dead letter quaran
   - `src/TransactionalMessaging.Core/Models/DeadLetterReason.cs` (new enum)
   - `src/TransactionalMessaging.Core/Models/OutboxMessage.cs` (add DeadLetterReason, DeadLetterMetadata)
   - `src/TransactionalMessaging.Hosting/Services/OutboxDispatcherService.cs` (dead letter detection)
-  - `schemas/sqlserver-outbox-schema.sql` (add DeadLetterReason, DeadLetterMetadata columns)
-  - `schemas/postgresql-outbox-schema.sql` (add DeadLetterReason, DeadLetterMetadata columns)
+  - `src/TransactionalMessaging.SqlServer/Schema/Outbox.sql` (add DeadLetterReason, DeadLetterMetadata columns)
+  - `src/TransactionalMessaging.PostgreSql/Schema/Outbox.sql` (add DeadLetterReason, DeadLetterMetadata columns)
   - `tools/TransactionalMessaging.Cli/Commands/ReplayDeadLetterCommand.cs` (new)
+  - `tests/TransactionalMessaging.Core.Tests/Handlers/` (new tests)
+  - `tests/TransactionalMessaging.IntegrationTests/PoisonMessageTests.cs` (new)
 - **PROTECTED**: Core contracts (minimize changes)
 
 **Definition of Done:**
@@ -299,10 +382,10 @@ Provide tools and procedures for disaster recovery, archival, and data retention
 - Backup/restore guidance
 
 **Authority:**
-- **READ**: All `src/**`, `schemas/**`
+- **READ**: All `src/**`
 - **WRITE**:
-  - `schemas/sqlserver-archive-schema.sql` (new)
-  - `schemas/postgresql-archive-schema.sql` (new)
+  - `src/TransactionalMessaging.SqlServer/Schema/Archive.sql` (new)
+  - `src/TransactionalMessaging.PostgreSql/Schema/Archive.sql` (new)
   - `src/TransactionalMessaging.Core/Services/OutboxArchivalService.cs` (new)
   - `src/TransactionalMessaging.Core/Services/InboxArchivalService.cs` (new)
   - `src/TransactionalMessaging.Core/Options/ArchivalOptions.cs` (new)
@@ -310,6 +393,8 @@ Provide tools and procedures for disaster recovery, archival, and data retention
   - `docs/DATA_RETENTION.md` (new)
   - `tools/TransactionalMessaging.Cli/Commands/ArchiveCommand.cs` (new)
   - `tools/TransactionalMessaging.Cli/Commands/PurgeCommand.cs` (new)
+  - `tests/TransactionalMessaging.Core.Tests/Services/` (archival tests)
+  - `tests/TransactionalMessaging.IntegrationTests/ArchivalTests.cs` (new)
 - **PROTECTED**: Main outbox/inbox tables (archival only, no destructive changes)
 
 **Definition of Done:**
