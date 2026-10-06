@@ -1,27 +1,47 @@
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
+using System.Data.Common;
 using TransactionalMessaging.Core.Abstractions;
 using TransactionalMessaging.Hosting.Extensions;
 using TransactionalMessaging.Sample;
 
-// Configuration
-const string connectionString = "Server=(localdb)\\mssqllocaldb;Database=TransactionalMessagingDemo;Integrated Security=true;TrustServerCertificate=true";
-
 Console.WriteLine("=== TransactionalMessaging Sample ===\n");
-Console.WriteLine("Prerequisites:");
-Console.WriteLine("  - SQL Server LocalDB installed");
-Console.WriteLine("  - Run schema scripts from src/TransactionalMessaging.SqlServer/Schema/\n");
 
-// Ensure database and tables exist
-await EnsureDatabaseAsync(connectionString);
-
-// Build host with all TransactionalMessaging services
+// Build host with configuration
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services
-    .AddTransactionalMessaging()
-    .UseSqlServer(connectionString)
+// Read configuration
+var dbProvider = builder.Configuration["DatabaseProvider"] ?? "SqlServer";
+var connectionString = dbProvider == "PostgreSql"
+    ? builder.Configuration.GetConnectionString("PostgreSql")!
+    : builder.Configuration.GetConnectionString("SqlServer")!;
+
+Console.WriteLine($"Database Provider: {dbProvider}");
+Console.WriteLine($"Prerequisites:");
+Console.WriteLine(dbProvider == "PostgreSql"
+    ? "  - Docker PostgreSQL running on port 5432"
+    : "  - Docker SQL Server running on port 1433");
+Console.WriteLine("  - Schema already created\n");
+
+// Ensure database and tables exist
+await EnsureDatabaseAsync(connectionString, dbProvider);
+
+// Configure TransactionalMessaging services
+var messagingBuilder = builder.Services.AddTransactionalMessaging();
+
+if (dbProvider == "PostgreSql")
+{
+    messagingBuilder.UsePostgreSql(connectionString);
+}
+else
+{
+    messagingBuilder.UseSqlServer(connectionString);
+}
+
+messagingBuilder
     .AddDispatcher()
     .AddInboxCleanup();
 
@@ -31,7 +51,7 @@ builder.Services.AddSingleton<IMessagePublisher, InMemoryPublisher>();
 var host = builder.Build();
 
 // Demonstrate outbox pattern
-await DemonstrateOutboxPatternAsync(host.Services, connectionString);
+await DemonstrateOutboxPatternAsync(host.Services, connectionString, dbProvider);
 
 // Start host to run dispatcher
 Console.WriteLine("\n[Host] Starting background services...");
@@ -41,40 +61,54 @@ var hostTask = host.RunAsync();
 await Task.Delay(3000);
 
 // Demonstrate inbox deduplication
-await DemonstrateInboxDeduplicationAsync(host.Services, connectionString);
+await DemonstrateInboxDeduplicationAsync(host.Services, connectionString, dbProvider);
 
 Console.WriteLine("\n[Host] Press Ctrl+C to stop...");
 await hostTask;
 
-static async Task EnsureDatabaseAsync(string connString)
+static async Task EnsureDatabaseAsync(string connString, string provider)
 {
-    var builder = new SqlConnectionStringBuilder(connString);
-    var dbName = builder.InitialCatalog;
-    builder.InitialCatalog = "master";
+    if (provider == "PostgreSql")
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connString);
+        var dbName = builder.Database;
 
-    using var connection = new SqlConnection(builder.ConnectionString);
-    await connection.OpenAsync();
+        Console.WriteLine($"[Setup] PostgreSQL database '{dbName}' ready");
+    }
+    else
+    {
+        var builder = new SqlConnectionStringBuilder(connString);
+        var dbName = builder.InitialCatalog;
+        builder.InitialCatalog = "master";
 
-    // Create database if not exists
-    using var cmd = connection.CreateCommand();
-    cmd.CommandText = $@"
-        IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = N'{dbName}')
-        BEGIN
-            CREATE DATABASE [{dbName}];
-        END";
-    await cmd.ExecuteNonQueryAsync();
+        using var connection = new SqlConnection(builder.ConnectionString);
+        await connection.OpenAsync();
 
-    Console.WriteLine($"[Setup] Database '{dbName}' ready");
+        // Create database if not exists
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $@"
+            IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = N'{dbName}')
+            BEGIN
+                CREATE DATABASE [{dbName}];
+            END";
+        await cmd.ExecuteNonQueryAsync();
+
+        Console.WriteLine($"[Setup] SQL Server database '{dbName}' ready");
+    }
 }
 
-static async Task DemonstrateOutboxPatternAsync(IServiceProvider services, string connString)
+static async Task DemonstrateOutboxPatternAsync(IServiceProvider services, string connString, string provider)
 {
     Console.WriteLine("\n=== Demonstrating Outbox Pattern ===\n");
 
     var outboxStore = services.GetRequiredService<IOutboxStore>();
 
     // Simulate a business transaction
-    await using var connection = new SqlConnection(connString);
+    DbConnection connection = provider == "PostgreSql"
+        ? new NpgsqlConnection(connString)
+        : new SqlConnection(connString);
+
+    await using var _ = connection;
     await connection.OpenAsync();
     await using var transaction = await connection.BeginTransactionAsync();
 
@@ -114,7 +148,7 @@ static async Task DemonstrateOutboxPatternAsync(IServiceProvider services, strin
     }
 }
 
-static async Task DemonstrateInboxDeduplicationAsync(IServiceProvider services, string connString)
+static async Task DemonstrateInboxDeduplicationAsync(IServiceProvider services, string connString, string provider)
 {
     Console.WriteLine("\n=== Demonstrating Inbox Deduplication ===\n");
 
@@ -123,7 +157,11 @@ static async Task DemonstrateInboxDeduplicationAsync(IServiceProvider services, 
     const string consumerScope = "order-processor";
 
     // First attempt - should succeed
-    await using var connection1 = new SqlConnection(connString);
+    DbConnection connection1 = provider == "PostgreSql"
+        ? new NpgsqlConnection(connString)
+        : new SqlConnection(connString);
+
+    await using var _1 = connection1;
     await connection1.OpenAsync();
     await using var transaction1 = await connection1.BeginTransactionAsync();
 
@@ -145,13 +183,17 @@ static async Task DemonstrateInboxDeduplicationAsync(IServiceProvider services, 
         Console.WriteLine("[Business] Processing incoming message...");
         await Task.Delay(100);
 
-        await inboxStore.MarkCompletedAsync(messageId, consumerScope, transaction1);
+        await inboxStore.MarkCompletedAsync(consumerScope, messageId, transaction1);
         await transaction1.CommitAsync();
         Console.WriteLine("[Inbox] First attempt: Message marked as completed");
     }
 
     // Second attempt (duplicate) - should be rejected
-    await using var connection2 = new SqlConnection(connString);
+    DbConnection connection2 = provider == "PostgreSql"
+        ? new NpgsqlConnection(connString)
+        : new SqlConnection(connString);
+
+    await using var _2 = connection2;
     await connection2.OpenAsync();
     await using var transaction2 = await connection2.BeginTransactionAsync();
 

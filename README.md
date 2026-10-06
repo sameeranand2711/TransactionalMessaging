@@ -43,6 +43,109 @@ dotnet add package TransactionalMessaging.Hosting
 
 **Framework support:** .NET 8.0 and .NET 10.0
 
+## Database Setup
+
+Before using the library, create the required database tables in your database.
+
+### SQL Server
+
+Run the schema script from `src/TransactionalMessaging.SqlServer/Schema/CreateTables.sql`:
+
+```sql
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- Outbox table
+CREATE TABLE transactional_outbox (
+    message_id NVARCHAR(255) NOT NULL,
+    message_type NVARCHAR(500) NOT NULL,
+    message_version NVARCHAR(50) NOT NULL,
+    payload VARBINARY(MAX) NOT NULL,
+    content_type NVARCHAR(100) NOT NULL,
+    headers NVARCHAR(MAX) NULL,
+    correlation_id NVARCHAR(255) NULL,
+    causation_id NVARCHAR(255) NULL,
+    ordering_key NVARCHAR(255) NULL,
+    ordering_sequence BIGINT NULL,
+    state INT NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    next_attempt_at DATETIMEOFFSET NULL,
+    claim_token NVARCHAR(50) NULL,
+    claimed_by NVARCHAR(100) NULL,
+    claimed_until DATETIMEOFFSET NULL,
+    occurred_at DATETIMEOFFSET NOT NULL,
+    created_at DATETIMEOFFSET NOT NULL DEFAULT SYSUTCDATETIME(),
+    published_at DATETIMEOFFSET NULL,
+    last_error_code NVARCHAR(100) NULL,
+    last_error_summary NVARCHAR(MAX) NULL,
+    CONSTRAINT pk_transactional_outbox PRIMARY KEY CLUSTERED (message_id)
+);
+
+-- Inbox table
+CREATE TABLE transactional_inbox (
+    message_id NVARCHAR(128) NOT NULL,
+    consumer_scope NVARCHAR(256) NOT NULL,
+    payload_fingerprint NVARCHAR(64) NULL,
+    state INT NOT NULL,
+    received_at DATETIMEOFFSET NOT NULL DEFAULT SYSUTCDATETIME(),
+    completed_at DATETIMEOFFSET NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    last_error NVARCHAR(MAX) NULL,
+    CONSTRAINT pk_transactional_inbox PRIMARY KEY CLUSTERED (message_id, consumer_scope)
+);
+
+-- Indexes (see full script for all indexes)
+```
+
+### PostgreSQL
+
+Run the schema script from `src/TransactionalMessaging.PostgreSql/Schema/CreateTables.sql`:
+
+```sql
+-- Outbox table
+CREATE TABLE IF NOT EXISTS transactional_outbox (
+    message_id VARCHAR(255) NOT NULL,
+    message_type VARCHAR(500) NOT NULL,
+    message_version VARCHAR(50) NOT NULL,
+    payload BYTEA NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    headers TEXT NULL,
+    correlation_id VARCHAR(255) NULL,
+    causation_id VARCHAR(255) NULL,
+    ordering_key VARCHAR(255) NULL,
+    ordering_sequence BIGINT NULL,
+    state INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NULL,
+    claim_token VARCHAR(50) NULL,
+    claimed_by VARCHAR(100) NULL,
+    claimed_until TIMESTAMPTZ NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at TIMESTAMPTZ NULL,
+    last_error_code VARCHAR(100) NULL,
+    last_error_summary TEXT NULL,
+    CONSTRAINT pk_transactional_outbox PRIMARY KEY (message_id)
+);
+
+-- Inbox table
+CREATE TABLE IF NOT EXISTS transactional_inbox (
+    message_id VARCHAR(255) NOT NULL,
+    consumer_scope VARCHAR(500) NOT NULL,
+    payload_fingerprint VARCHAR(64) NULL,
+    state INTEGER NOT NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NULL,
+    CONSTRAINT pk_transactional_inbox PRIMARY KEY (message_id, consumer_scope)
+);
+
+-- Indexes (see full script for all indexes)
+```
+
 ## Quick Start
 
 ### 1. Register services
