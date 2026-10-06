@@ -25,4 +25,16 @@ public static class PostgreSqlTransactionalMessagingExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Adds PostgreSQL stores to the TransactionalMessaging builder.
+    /// </summary>
+    public static TransactionalMessagingBuilder UsePostgreSql(
+        this TransactionalMessagingBuilder builder,
+        string connectionString)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddPostgreSqlTransactionalMessaging(connectionString);
+        return builder;
+    }
 }

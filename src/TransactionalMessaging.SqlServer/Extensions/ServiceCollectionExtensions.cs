@@ -25,4 +25,16 @@ public static class SqlServerTransactionalMessagingExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Adds SQL Server stores to the TransactionalMessaging builder.
+    /// </summary>
+    public static TransactionalMessagingBuilder UseSqlServer(
+        this TransactionalMessagingBuilder builder,
+        string connectionString)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddSqlServerTransactionalMessaging(connectionString);
+        return builder;
+    }
 }

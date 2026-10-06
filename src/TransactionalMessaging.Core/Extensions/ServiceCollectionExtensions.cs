@@ -42,4 +42,31 @@ public static class TransactionalMessagingServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Adds TransactionalMessaging core services with a fluent configuration builder.
+    /// Use this method to chain provider and hosting registrations.
+    /// </summary>
+    public static TransactionalMessagingBuilder AddTransactionalMessaging(
+        this IServiceCollection services,
+        Action<MessageOptions>? configureMessage = null,
+        Action<RetryOptions>? configureRetry = null,
+        Action<DispatcherOptions>? configureDispatcher = null)
+    {
+        services.AddTransactionalMessagingCore(configureMessage, configureRetry, configureDispatcher);
+        return new TransactionalMessagingBuilder(services);
+    }
+}
+
+/// <summary>
+/// Builder for configuring TransactionalMessaging services.
+/// </summary>
+public sealed class TransactionalMessagingBuilder
+{
+    public IServiceCollection Services { get; }
+
+    public TransactionalMessagingBuilder(IServiceCollection services)
+    {
+        Services = services ?? throw new ArgumentNullException(nameof(services));
+    }
 }
